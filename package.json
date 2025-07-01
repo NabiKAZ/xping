@@ -1,0 +1,41 @@
+{
+  "name": "@nabikaz/xping",
+  "version": "1.0.0",
+  "description": "VLESS connection ping tool using Xray with fragment support",
+  "main": "xping.mjs",
+  "type": "module",
+  "bin": {
+    "xping": "./xping.mjs"
+  },
+  "scripts": {
+    "start": "node xping.mjs",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [
+    "xray",
+    "vless",
+    "ping",
+    "proxy",
+    "fragment",
+    "connection-test",
+    "network-tool"
+  ],
+  "author": "NabiKAZ",
+  "license": "GPL-3.0-only",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/NabiKAZ/xping.git"
+  },
+  "bugs": {
+    "url": "https://github.com/NabiKAZ/xping/issues"
+  },
+  "homepage": "https://github.com/NabiKAZ/xping#readme",
+  "dependencies": {
+    "chalk": "^5.3.0",
+    "commander": "^11.1.0",
+    "undici": "^6.2.1"
+  },
+  "engines": {
+    "node": ">=16.0.0"
+  }
+}
