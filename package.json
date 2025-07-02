@@ -32,8 +32,8 @@
   "homepage": "https://github.com/NabiKAZ/xping#readme",
   "dependencies": {
     "chalk": "^5.3.0",
-    "commander": "^11.1.0",
-    "undici": "^6.2.1"
+    "undici": "^6.2.1",
+    "yargs": "^18.0.0"
   },
   "engines": {
     "node": ">=16.0.0"

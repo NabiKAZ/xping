@@ -5,7 +5,8 @@ import { promisify } from 'util';
 import { readFileSync, existsSync } from 'fs';
 import { resolve } from 'path';
 import chalk from 'chalk';
-import { Command } from 'commander';
+import yargs from 'yargs';
+import { hideBin } from 'yargs/helpers';
 import net from 'net';
 
 const execAsync = promisify(exec);
@@ -376,24 +377,60 @@ async function validateXrayConfig(xrayPath, configData) {
 
 // Main function
 async function main() {
-    const program = new Command();
-
-    program
-        .name('xping')
-        .description('VLESS connection ping tool using Xray with fragment support\nProject: https://github.com/NabiKAZ/xping')
-        .argument('<input>', 'VLESS URL or xray config file path to test')
-        .option('-f, --fragment', 'Enable fragment mode')
-        .option('-d, --delay <ms>', 'Delay between pings in milliseconds', '1000')
-        .option('-t, --timeout <ms>', 'Connection timeout in milliseconds', '10000')
-        .option('-c, --count <number>', 'Number of pings to send (default: infinite)')
-        .version('1.0.0', '-v, --version', 'output the version number')
-        .helpOption('-h, --help', 'Display help for command')
-        .addHelpText('after', `
-Examples:
-  $ node ping3.mjs "vless://uuid@server:port?security=tls&type=ws&path=/..."
-  $ node ping3.mjs config.json --fragment --count 10
-  $ node ping3.mjs "vless://..." --delay 500 --timeout 10000 --count 5
-  $ node ping3.mjs config.json -c 3 -d 2000 -t 5000
+    const argv = yargs(hideBin(process.argv))
+        .scriptName('xping')
+        .usage('\nVLESS connection ping tool using Xray with fragment support\nProject: https://github.com/NabiKAZ/xping\n\nUsage: $0 <input> [options]')
+        .updateStrings({
+            'Positionals:': 'Arguments:'
+        })
+        .fail((msg, err, yargs) => {
+            if (err) {
+                console.error(chalk.red(`❌ Error: ${err.message}`));
+            } else {
+                console.error(yargs.help());
+                console.error('');
+                console.error(chalk.red(`❌ ${msg}`));
+            }
+            process.exit(1);
+        })
+        .command('$0 <input>', 'VLESS URL or xray config file path to test', (yargs) => {
+            yargs.positional('input', {
+                describe: 'VLESS URL or xray config file path to test',
+                type: 'string'
+            });
+        })
+        .option('f', {
+            alias: 'fragment',
+            describe: 'Enable fragment mode',
+            type: 'boolean',
+            default: false
+        })
+        .option('d', {
+            alias: 'delay',
+            describe: 'Delay between pings in milliseconds',
+            type: 'number',
+            default: 1000
+        })
+        .option('t', {
+            alias: 'timeout',
+            describe: 'Connection timeout in milliseconds',
+            type: 'number',
+            default: 10000
+        })
+        .option('c', {
+            alias: 'count',
+            describe: 'Number of pings to send (default: infinite)',
+            type: 'number'
+        })
+        .version('1.0.0')
+        .alias('v', 'version')
+        .help('h')
+        .alias('h', 'help')
+        .epilogue(`Examples:
+  $ xping "vless://uuid@server:port?security=tls&type=ws&path=/..."
+  $ xping config.json --fragment --count 10
+  $ xping "vless://..." --delay 500 --timeout 10000 --count 5
+  $ xping config.json -c 3 -d 2000 -t 5000
 
 Environment Variables:
   XPING_XRAY_PATH          Path to xray binary (default: xray)
@@ -404,19 +441,15 @@ Environment Variables:
 
 Note: 
   - When using a config file, it will be processed in memory with a free port (original file unchanged)
-  - Fragment mode is only applied to vless URLs, not config files
-        `);
+  - Fragment mode is only applied to vless URLs, not config files`)
+        .wrap(null)
+        .parseSync();
 
-    program.parse();
-
-    const options = program.opts();
-    const input = program.args[0];
-
-    // Set configuration from options
-    const fragmentEnabled = options.fragment; // Default is false, enabled with --fragment
-    const delay = parseInt(options.delay);
-    const timeout = parseInt(options.timeout);
-    const pingCount = options.count ? parseInt(options.count) : null; // null means infinite
+    const input = argv.input;
+    const fragmentEnabled = argv.fragment;
+    const delay = argv.delay;
+    const timeout = argv.timeout;
+    const pingCount = argv.count || null; // null means infinite
 
     try {
         console.log('');
@@ -432,7 +465,7 @@ Note:
 
         // Find a free port for proxy
         let proxyPort = await findFreePort();
-        
+
         // Detect input type and load config
         const inputData = detectInputTypeAndLoadConfig(input);
         const connectionInfo = inputData.config;
@@ -461,7 +494,7 @@ Note:
             const fileContent = readFileSync(configFilePath, 'utf8');
             const fullXrayConfig = JSON.parse(fileContent);
             configFragmentInfo = detectFragmentInConfig(fullXrayConfig);
-            
+
             // Modify the config to use our free port instead of the original port
             if (fullXrayConfig.inbounds) {
                 fullXrayConfig.inbounds.forEach(inbound => {
@@ -490,9 +523,9 @@ Note:
         console.log(chalk.cyanBright(`📍 ${connectionInfo.address}:${connectionInfo.port}`) + chalk.gray(' | ') + chalk.white(connectionInfo.remark));
 
         if (inputData.type === 'vless') {
-            console.log(chalk.cyanBright(`🔒 ${connectionInfo.security}`) + chalk.gray(' | SNI: ') + chalk.yellow(connectionInfo.sni) + chalk.gray(' | Path: ') + chalk.yellow(connectionInfo.path));
+            console.log(chalk.cyanBright(`🔒 ${connectionInfo.security}`) + chalk.gray(' | Type: ') + chalk.yellow(connectionInfo.type) + chalk.gray(' | Host: ') + chalk.yellow(connectionInfo.host) + chalk.gray(' | SNI: ') + chalk.yellow(connectionInfo.sni) + chalk.gray(' | Path: ') + chalk.yellow(connectionInfo.path));
         } else {
-            console.log(chalk.cyanBright(`🔒 ${connectionInfo.security}`) + chalk.gray(' | Network: ') + chalk.yellow(connectionInfo.network) + chalk.gray(' | Protocol: ') + chalk.yellow(connectionInfo.protocol));
+            console.log(chalk.cyanBright(`🔒 ${connectionInfo.security}`) + chalk.gray(' | Type: ') + chalk.yellow(connectionInfo.network) + chalk.gray(' | Protocol: ') + chalk.yellow(connectionInfo.protocol));
         }
 
         // Show fragment info
@@ -526,7 +559,7 @@ Note:
             console.log(chalk.red(`❌ Failed to start xray: ${error.message}`));
             process.exit(1);
         });
-       
+
         // Send config to xray via stdin (both vless and modified config file)
         if (xrayConfig) {
             xrayProcess.stdin.write(JSON.stringify(xrayConfig, null, 2));

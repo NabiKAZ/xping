@@ -25,7 +25,7 @@ A powerful command-line tool for testing VLESS proxy connections with advanced f
 ### Install via npm (Global)
 
 ```bash
-npm install -g xping
+npm install -g @nabikaz/xping
 ```
 
 ### Manual Installation
@@ -57,18 +57,18 @@ xping config.json --count 10 --delay 2000 --timeout 5000
 ### Command Line Options
 
 ```
-Usage: xping [options] <input>
+Usage: xping <input> [options]
 
 Arguments:
-  input                 VLESS URL or xray config file path to test
+  input  VLESS URL or xray config file path to test
 
 Options:
-  -v, --version         output the version number
-  -f, --fragment        Enable fragment mode
-  -d, --delay <ms>      Delay between pings in milliseconds (default: "1000")
-  -t, --timeout <ms>    Connection timeout in milliseconds (default: "10000")
-  -c, --count <number>  Number of pings to send (default: infinite)
-  -h, --help            Display help for command
+  -f, --fragment  Enable fragment mode (default: false)
+  -d, --delay     Delay between pings in milliseconds (default: 1000)
+  -t, --timeout   Connection timeout in milliseconds (default: 10000)
+  -c, --count     Number of pings to send (default: infinite)
+  -h, --help      Show help
+  -v, --version   Show version number
 ```
 
 ### Examples
@@ -148,12 +148,6 @@ xping config.json
 - **Node.js**: Version 16.0.0 or higher
 - **Xray-core**: Any recent version
 
-### Dependencies
-
-- `chalk`: For colored terminal output
-- `commander`: For command-line interface
-- `undici`: For HTTP requests with proxy support
-
 ## 🛠️ How It Works
 
 1. **Input Detection**: Automatically detects whether input is a VLESS URL or config file
@@ -164,16 +158,6 @@ xping config.json
 4. **Proxy Setup**: Starts Xray with automatic port management
 5. **Connection Testing**: Performs HTTP requests through the proxy
 6. **Statistics**: Provides real-time and summary statistics
-
-## 🤝 Contributing
-
-Contributions are welcome! Please feel free to submit a Pull Request.
-
-1. Fork the repository
-2. Create your feature branch (`git checkout -b feature/AmazingFeature`)
-3. Commit your changes (`git commit -m 'Add some AmazingFeature'`)
-4. Push to the branch (`git push origin feature/AmazingFeature`)
-5. Open a Pull Request
 
 # 🎬 Demo Video
 
