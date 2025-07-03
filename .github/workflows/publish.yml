@@ -1,0 +1,28 @@
+name: Publish to NPM
+
+on:
+  push:
+    branches: [ main ]
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - uses: actions/setup-node@v4
+      with:
+        node-version: '18'
+        registry-url: 'https://registry.npmjs.org'
+    
+    - run: npm ci
+    - run: |
+        CURRENT_VERSION=$(node -p "require('./package.json').version")
+        TIMESTAMP=$(date +%Y%m%d%H%M%S)
+        NEW_VERSION="${CURRENT_VERSION}-${TIMESTAMP}"
+        echo "Setting version to: $NEW_VERSION"
+        npm version "$NEW_VERSION" --no-git-tag-version
+    - run: npm publish --access public
+      env:
+        NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
