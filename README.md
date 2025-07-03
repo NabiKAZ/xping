@@ -4,6 +4,14 @@
 
 A powerful command-line tool for testing VLESS proxy connections with advanced features like fragment support, real-time ping statistics, and automatic port management.
 
+---
+
+## 🎬 Demo Video
+
+https://github.com/user-attachments/assets/6dd3f671-5469-441a-91c0-00b1028e2708
+
+---
+
 ## ✨ Features
 
 - 🔗 **VLESS URL Support**: Test connections directly from VLESS URLs
@@ -14,6 +22,8 @@ A powerful command-line tool for testing VLESS proxy connections with advanced f
 - 🌈 **Colorful Output**: Beautiful colored terminal output
 - ⚙️ **Environment Variables**: Customizable via environment variables
 - 🛡️ **Config Validation**: Built-in Xray config validation
+
+---
 
 ## 📦 Installation
 
@@ -35,6 +45,8 @@ git clone https://github.com/NabiKAZ/xping.git
 cd xping
 npm install
 ```
+
+---
 
 ## 🚀 Usage
 
@@ -90,6 +102,8 @@ xping config.json --delay 500 --timeout 15000 --count 10
 xping "vless://..."
 ```
 
+---
+
 ## 🔧 Environment Variables
 
 Configure XPing behavior using environment variables:
@@ -121,32 +135,7 @@ $env:XPING_TARGET_URL="https://www.cloudflare.com"
 xping config.json
 ```
 
-## 📊 Output Example
-
-```
-✅ Config validation passed
-📍 example.com:443 | my-server
-🔒 tls | Network: ws | Protocol: vless
-📝 Fragment: packets: tlshello, length: 100-200, interval: 10-20
-
-[10:30:15] ✅ example.com:443 responded in 245ms
-[10:30:16] ✅ example.com:443 responded in 198ms
-[10:30:17] ❌ Request timeout
-[10:30:18] ✅ example.com:443 responded in 267ms
-^C
-📊 === Statistics ===
-📦 Sent: 4 | Received: 3 | Lost: 1 (25% loss)
-⏱️  Min: 198ms | Max: 267ms | Avg: 237ms
-🏁 Completed!
-```
-
-## 📋 Requirements
-
-### System Requirements
-
-- **Operating System**: Windows, macOS, Linux
-- **Node.js**: Version 16.0.0 or higher
-- **Xray-core**: Any recent version
+---
 
 ## 🛠️ How It Works
 
@@ -159,13 +148,9 @@ xping config.json
 5. **Connection Testing**: Performs HTTP requests through the proxy
 6. **Statistics**: Provides real-time and summary statistics
 
-# 🎬 Demo Video
-
-Coming soon! A demonstration and tutorial video for XPing will be available here.
-
 ---
 
-# 💸 Donate
+## 💸 Donate
 
 If you find this tool useful and would like to support its development:
 
