@@ -1,5 +1,22 @@
 #!/usr/bin/env node
 
+/**
+ * XPing - VLESS Connection Ping Tool
+ * 
+ * A powerful command-line tool for testing VLESS proxy connections with 
+ * advanced features like fragment support, real-time ping statistics, 
+ * and automatic port management.
+ * 
+ * @repository https://github.com/NabiKAZ/xping
+ * @author NabiKAZ <https://x.com/NabiKAZ>
+ * @license GPL-3.0
+ * @created 2025
+ * 
+ * Copyright (C) 2025 NabiKAZ
+ * Licensed under GNU General Public License v3.0
+ * See: https://www.gnu.org/licenses/gpl-3.0.html
+ */
+
 import { spawn, exec } from 'child_process';
 import { promisify } from 'util';
 import { readFileSync, existsSync } from 'fs';
