@@ -94,6 +94,7 @@ function parseVlessUrl(vlessUrl) {
             sni: params.get('sni') || '',
             fp: params.get('fp') || '',
             type: params.get('type') || 'ws',
+            headerType: params.get('headerType') || '',
             host: params.get('host') || '',
             path: params.get('path') || '/',
             remark: decodeURIComponent(paramsPart.split('#')[1] || 'vless-config')
@@ -159,6 +160,26 @@ function generateXrayConfig(vlessConfig, fragmentEnabled = false, proxyPort = 10
                         "path": vlessConfig.path,
                         "headers": {
                             "Host": vlessConfig.host
+                        }
+                    } : undefined,
+                    "tcpSettings": (vlessConfig.type === "tcp" && vlessConfig.headerType === "http") ? {
+                        "header": {
+                            "type": "http",
+                            "request": {
+                                "version": "1.1",
+                                "method": "GET",
+                                "path": [vlessConfig.path || "/"],
+                                "headers": {
+                                    "Host": [vlessConfig.host],
+                                    "User-Agent": [
+                                        "Mozilla/5.0 (Windows NT 10.0; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/53.0.2785.143 Safari/537.36",
+                                        "Mozilla/5.0 (iPhone; CPU iPhone OS 10_0_2 like Mac OS X) AppleWebKit/601.1 (KHTML, like Gecko) CriOS/53.0.2785.109 Mobile/14A456 Safari/601.1.46"
+                                    ],
+                                    "Accept-Encoding": ["gzip, deflate"],
+                                    "Connection": ["keep-alive"],
+                                    "Pragma": "no-cache"
+                                }
+                            }
                         }
                     } : undefined,
                     "sockopt": fragmentEnabled ? {
