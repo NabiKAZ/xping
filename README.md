@@ -1,8 +1,8 @@
 # XPing
 
-🚀 **VLESS connection ping tool using Xray with fragment support**
+🚀 **Multi-Protocol Connection Ping Tool using Xray with fragment support**
 
-A powerful command-line tool for testing VLESS proxy connections with advanced features like fragment support, real-time ping statistics, and automatic port management.
+A powerful command-line tool for testing proxy connections (VLESS, VMESS, Shadowsocks, Trojan) with advanced features like fragment support, real-time ping statistics, and automatic port management.
 
 ---
 
@@ -14,14 +14,15 @@ https://github.com/user-attachments/assets/6dd3f671-5469-441a-91c0-00b1028e2708
 
 ## ✨ Features
 
-- 🔗 **VLESS URL Support**: Test connections directly from VLESS URLs
-- 📁 **Config File Support**: Use existing Xray config files
+- 🔗 **Multi-Protocol Support**: Test VLESS, VMESS, Shadowsocks (SS), and Trojan protocols
+- 📁 **Config File Support**: Use existing Xray config files for testing
 - 🧩 **Fragment Mode**: Enable fragment for bypassing censorship
-- 📊 **Real-time Statistics**: Live ping results with detailed stats
+- 📊 **Real-time Statistics**: Live ping results with detailed min/max/avg stats
 - 🎯 **Smart Port Management**: Automatic free port detection to avoid conflicts
-- 🌈 **Colorful Output**: Beautiful colored terminal output
+- 🌈 **Colorful Output**: Beautiful colored terminal output with emojis
 - ⚙️ **Environment Variables**: Customizable via environment variables
 - 🛡️ **Config Validation**: Built-in Xray config validation
+- 🔍 **Protocol Detection**: Automatic protocol detection from URL scheme
 
 ---
 
@@ -56,10 +57,19 @@ npm install
 # Test with VLESS URL
 xping "vless://uuid@server:port?security=tls&type=ws&path=/..."
 
+# Test with VMESS URL (base64 encoded)
+xping "vmess://base64-encoded-config"
+
+# Test with Shadowsocks URL
+xping "ss://method:password@server:port"
+
+# Test with Trojan URL
+xping "trojan://password@server:port?security=tls"
+
 # Test with config file
 xping config.json
 
-# Test with fragment mode (VLESS URL only)
+# Test with fragment mode
 xping "vless://..." --fragment
 
 # Test with custom options
@@ -72,7 +82,7 @@ xping config.json --count 10 --delay 2000 --timeout 5000
 Usage: xping <input> [options]
 
 Arguments:
-  input  VLESS URL or xray config file path to test
+  input  Protocol URL (vless://, vmess://, ss://, trojan://) or xray config file
 
 Options:
   -f, --fragment  Enable fragment mode (default: false)
@@ -83,13 +93,31 @@ Options:
   -v, --version   Show version number
 ```
 
+### Supported Protocols
+
+| Protocol | URL Format | Example |
+|----------|-----------|----------|
+| **VLESS** | `vless://uuid@host:port?...` | `vless://abc123@example.com:443?security=tls&type=ws` |
+| **VMESS** | `vmess://base64-config` | `vmess://ew0KICAidiI6ICIyIiwNCiAgImlkIjog...` |
+| **Shadowsocks** | `ss://method:password@host:port` | `ss://aes-256-gcm:pass@example.com:8388` |
+| **Trojan** | `trojan://password@host:port?...` | `trojan://pwd@example.com:443?security=tls` |
+
 ### Examples
 
 ```bash
-# Basic ping test
-xping "vless://abc123@example.com:443?security=tls&type=ws&path=/path"
+# VLESS protocol test
+xping "vless://abc123@example.com:443?security=tls&type=ws&path=/"
 
-# Test with fragment enabled
+# VMESS protocol test
+xping "vmess://ew0KICAidiI6ICIyIiwDQiAgImlkIjogImFiYzEyMyIsDQogIC4uLn0="
+
+# Shadowsocks protocol test
+xping "ss://aes-256-gcm:mypassword@example.com:8388"
+
+# Trojan protocol test
+xping "trojan://mypassword@example.com:443?security=tls&sni=example.com"
+
+# Test with fragment enabled (URL protocols only)
 xping "vless://abc123@example.com:443?..." --fragment
 
 # Test config file with limited count
