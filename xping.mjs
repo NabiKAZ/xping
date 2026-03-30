@@ -1,20 +1,29 @@
 #!/usr/bin/env node
 
 /**
- * XPing - VLESS Connection Ping Tool
+ * XPing - Multi-Protocol Connection Ping Tool
  * 
- * A powerful command-line tool for testing VLESS proxy connections with 
- * advanced features like fragment support, real-time ping statistics, 
- * and automatic port management.
+ * Test proxy connections (VLESS, VMESS, Shadowsocks, Trojan) using Xray core.
+ * Features: Fragment mode, auto port detection, real-time stats, config file support.
+ * 
+ * Usage:
+ *  xping "vless://uuid@server:port?security=tls"
+ *  xping "vmess://base64-config"
+ *  xping "ss://method:password@server:port"
+ *  xping "trojan://password@server:port"
+ *  xping config.json --fragment -c 10
+ * 
+ * Environment Variables:
+ *  XPING_XRAY_PATH          : Path to xray binary (default: xray)
+ *  XPING_TARGET_URL         : Target URL for testing (default: https://www.google.com/generate_204)
+ *  XPING_FRAGMENT_PACKETS   : Fragment packets type (default: tlshello)
+ *  XPING_FRAGMENT_LENGTH    : Fragment length range (default: 5-9)
+ *  XPING_FRAGMENT_INTERVAL  : Fragment interval range (default: 1-2)
  * 
  * @repository https://github.com/NabiKAZ/xping
  * @author NabiKAZ <https://x.com/NabiKAZ>
  * @license GPL-3.0
- * @created 2025
- * 
- * Copyright (C) 2025 NabiKAZ
- * Licensed under GNU General Public License v3.0
- * See: https://www.gnu.org/licenses/gpl-3.0.html
+ * @version 2.0.0
  */
 
 import { spawn, exec } from 'child_process';
@@ -56,8 +65,9 @@ function findFreePort() {
 async function checkXrayAvailable() {
     try {
         // Try the specified XRAY_PATH first
-        await execAsync(`"${XRAY_PATH}" version`);
-        return XRAY_PATH;
+        const cleanPath = String(XRAY_PATH).replace(/^["']|["']$/g, '');
+        await execAsync(`"${cleanPath}" version`);
+        return cleanPath;
     } catch (error) {
         // Try system PATH as fallback
         try {
@@ -69,161 +79,377 @@ async function checkXrayAvailable() {
     }
 }
 
-// Function to parse vless URL
-function parseVlessUrl(vlessUrl) {
+// Helper function to safely decode URI component
+function safeDecodeURIComponent(value = '') {
     try {
-        // Remove vless:// prefix
-        const urlWithoutProtocol = vlessUrl.replace('vless://', '');
-
-        // Split at @ to separate uuid and server info
-        const [uuid, serverPart] = urlWithoutProtocol.split('@');
-
-        // Split server part to get address, port and parameters
-        const [serverAndPort, paramsPart] = serverPart.split('?');
-        const [address, port] = serverAndPort.split(':');
-
-        // Parse parameters
-        const params = new URLSearchParams(paramsPart.split('#')[0]);
-
-        return {
-            uuid: uuid,
-            address: address,
-            port: parseInt(port),
-            encryption: params.get('encryption') || 'none',
-            security: params.get('security') || 'tls',
-            sni: params.get('sni') || '',
-            fp: params.get('fp') || '',
-            type: params.get('type') || 'ws',
-            headerType: params.get('headerType') || '',
-            host: params.get('host') || '',
-            path: params.get('path') || '/',
-            remark: decodeURIComponent(paramsPart.split('#')[1] || 'vless-config')
-        };
-    } catch (error) {
-        throw new Error(`Failed to parse vless URL: ${error.message}`);
+        return decodeURIComponent(value);
+    } catch {
+        return value;
     }
 }
 
-// Function to generate xray config
-function generateXrayConfig(vlessConfig, fragmentEnabled = false, proxyPort = 10801) {
-    const config = {
-        "log": {
-            "loglevel": "error"
-        },
-        "dns": {
-            "servers": [
-                "8.8.8.8",
-                "1.1.1.1"
-            ]
-        },
-        "inbounds": [
-            {
-                "tag": "http-proxy",
-                "port": proxyPort,
-                "listen": "127.0.0.1",
-                "protocol": "http",
-                "settings": {
-                    "auth": "noauth",
-                    "allowTransparent": false
+// Helper function to decode Base64
+function decodeBase64(input) {
+    let normalized = String(input || '').replace(/-/g, '+').replace(/_/g, '/').trim();
+    while (normalized.length % 4 !== 0) normalized += '=';
+    return Buffer.from(normalized, 'base64').toString('utf8');
+}
+
+// Helper function to split URL and remark
+function splitUrlAndRemark(rawUrl, scheme) {
+    const body = rawUrl.slice(`${scheme}://`.length);
+    const hashIndex = body.indexOf('#');
+    if (hashIndex === -1) {
+        return { base: rawUrl, remark: `${scheme}-config` };
+    }
+    const baseBody = body.slice(0, hashIndex);
+    const remark = safeDecodeURIComponent(body.slice(hashIndex + 1)) || `${scheme}-config`;
+    return { base: `${scheme}://${baseBody}`, remark };
+}
+
+// Helper function to parse JSON safely
+function parseMaybeJson(value, fallback = {}) {
+    if (!value) return fallback;
+    try {
+        return JSON.parse(value);
+    } catch {
+        return fallback;
+    }
+}
+
+// Helper function to build common stream settings
+function buildCommonStreamSettings(config, fragmentEnabled) {
+    const streamSettings = {
+        network: config.type || 'tcp',
+        security: config.security || 'none',
+        sockopt: fragmentEnabled ? { dialerProxy: 'fragment' } : undefined
+    };
+
+    if (config.security === 'tls') {
+        streamSettings.tlsSettings = {
+            allowInsecure: false,
+            serverName: config.sni || config.host || undefined,
+            fingerprint: config.fp || undefined,
+            alpn: config.alpn || undefined
+        };
+    } else if (config.security === 'reality') {
+        streamSettings.realitySettings = {
+            serverName: config.sni || config.serverName || undefined,
+            fingerprint: config.fp || 'chrome',
+            publicKey: config.pbk || undefined,
+            shortId: config.sid || undefined,
+            spiderX: config.spx || undefined
+        };
+    }
+
+    if (streamSettings.network === 'ws') {
+        streamSettings.wsSettings = {
+            path: config.path || '/',
+            headers: config.host ? { Host: config.host } : undefined
+        };
+    }
+
+    if (streamSettings.network === 'grpc') {
+        streamSettings.grpcSettings = {
+            serviceName: config.serviceName || config.path || '',
+            multiMode: config.mode === 'multi'
+        };
+    }
+
+    if (streamSettings.network === 'tcp' && config.headerType === 'http') {
+        streamSettings.tcpSettings = {
+            header: {
+                type: 'http',
+                request: {
+                    version: '1.1',
+                    method: 'GET',
+                    path: [config.path || '/'],
+                    headers: {
+                        Host: config.host ? [config.host] : [''],
+                        'User-Agent': [
+                            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36'
+                        ],
+                        'Accept-Encoding': ['gzip, deflate'],
+                        Connection: ['keep-alive'],
+                        Pragma: ['no-cache']
+                    }
                 }
             }
-        ],
-        "outbounds": [
+        };
+    }
+
+    return streamSettings;
+}
+
+// Function to parse vless URL
+function parseVlessUrl(vlessUrl) {
+    try {
+        const { base, remark } = splitUrlAndRemark(vlessUrl, 'vless');
+        const url = new URL(base);
+
+        return {
+            protocol: 'vless',
+            uuid: decodeURIComponent(url.username),
+            address: url.hostname,
+            port: Number(url.port),
+            encryption: url.searchParams.get('encryption') || 'none',
+            security: url.searchParams.get('security') || 'tls',
+            sni: url.searchParams.get('sni') || '',
+            fp: url.searchParams.get('fp') || '',
+            type: url.searchParams.get('type') || 'ws',
+            headerType: url.searchParams.get('headerType') || '',
+            host: url.searchParams.get('host') || '',
+            path: url.searchParams.get('path') || '/',
+            serviceName: url.searchParams.get('serviceName') || '',
+            mode: url.searchParams.get('mode') || '',
+            pbk: url.searchParams.get('pbk') || '',
+            sid: url.searchParams.get('sid') || '',
+            spx: url.searchParams.get('spx') || '',
+            alpn: (url.searchParams.get('alpn') || '').split(',').filter(Boolean),
+            remark
+        };
+    } catch (error) {
+        throw new Error(`Failed to parse VLESS URL: ${error.message}`);
+    }
+}
+
+// Function to parse vmess URL
+function parseVmessUrl(vmessUrl) {
+    try {
+        const encoded = vmessUrl.slice('vmess://'.length).trim();
+        const decoded = decodeBase64(encoded);
+        const data = JSON.parse(decoded);
+
+        return {
+            protocol: 'vmess',
+            uuid: data.id,
+            address: data.add,
+            port: Number(data.port),
+            aid: Number(data.aid || 0),
+            scy: data.scy || 'auto',
+            security: data.tls === 'tls' ? 'tls' : (data.security || 'none'),
+            sni: data.sni || data.host || '',
+            fp: data.fp || '',
+            type: data.net || 'tcp',
+            headerType: data.type || '',
+            host: data.host || '',
+            path: data.path || '/',
+            serviceName: data.path || '',
+            mode: data.mode || '',
+            alpn: data.alpn ? String(data.alpn).split(',').filter(Boolean) : [],
+            remark: data.ps || 'vmess-config'
+        };
+    } catch (error) {
+        throw new Error(`Failed to parse VMESS URL: ${error.message}`);
+    }
+}
+
+// Function to parse ss URL
+function parseSsUrl(ssUrl) {
+    try {
+        const { base, remark } = splitUrlAndRemark(ssUrl, 'ss');
+        const body = base.slice('ss://'.length);
+        const queryIndex = body.indexOf('?');
+        const mainPart = queryIndex === -1 ? body : body.slice(0, queryIndex);
+        const queryPart = queryIndex === -1 ? '' : body.slice(queryIndex + 1);
+        const pluginParams = new URLSearchParams(queryPart);
+
+        let credsPart = mainPart;
+        let serverPart = '';
+
+        if (mainPart.includes('@')) {
+            [credsPart, serverPart] = mainPart.split('@');
+        } else {
+            const decoded = decodeBase64(mainPart);
+            const atIndex = decoded.lastIndexOf('@');
+            if (atIndex === -1) throw new Error('Invalid SS config format');
+            credsPart = decoded.slice(0, atIndex);
+            serverPart = decoded.slice(atIndex + 1);
+        }
+
+        const credsDecoded = credsPart.includes(':') ? credsPart : decodeBase64(credsPart);
+        const firstColon = credsDecoded.indexOf(':');
+        if (firstColon === -1) throw new Error('Invalid SS credentials');
+
+        const method = credsDecoded.slice(0, firstColon);
+        const password = credsDecoded.slice(firstColon + 1);
+        const serverMatch = serverPart.match(/^(.+):([0-9]+)$/);
+        if (!serverMatch) throw new Error('Invalid SS server:port');
+
+        return {
+            protocol: 'shadowsocks',
+            address: serverMatch[1],
+            port: Number(serverMatch[2]),
+            method,
+            password,
+            plugin: pluginParams.get('plugin') || '',
+            pluginOpts: pluginParams.get('plugin-opts') || '',
+            remark
+        };
+    } catch (error) {
+        throw new Error(`Failed to parse SS URL: ${error.message}`);
+    }
+}
+
+// Function to parse trojan URL
+function parseTrojanUrl(trojanUrl) {
+    try {
+        const { base, remark } = splitUrlAndRemark(trojanUrl, 'trojan');
+        const url = new URL(base);
+
+        return {
+            protocol: 'trojan',
+            password: decodeURIComponent(url.username),
+            address: url.hostname,
+            port: Number(url.port),
+            security: url.searchParams.get('security') || 'tls',
+            sni: url.searchParams.get('sni') || '',
+            fp: url.searchParams.get('fp') || '',
+            type: url.searchParams.get('type') || 'tcp',
+            headerType: url.searchParams.get('headerType') || '',
+            host: url.searchParams.get('host') || '',
+            path: url.searchParams.get('path') || '/',
+            serviceName: url.searchParams.get('serviceName') || '',
+            mode: url.searchParams.get('mode') || '',
+            alpn: (url.searchParams.get('alpn') || '').split(',').filter(Boolean),
+            remark
+        };
+    } catch (error) {
+        throw new Error(`Failed to parse TROJAN URL: ${error.message}`);
+    }
+}
+
+// Function to detect and parse any config URL
+function parseConfigUrl(configUrl) {
+    if (configUrl.startsWith('vless://')) return parseVlessUrl(configUrl);
+    if (configUrl.startsWith('vmess://')) return parseVmessUrl(configUrl);
+    if (configUrl.startsWith('ss://')) return parseSsUrl(configUrl);
+    if (configUrl.startsWith('trojan://')) return parseTrojanUrl(configUrl);
+    throw new Error('Unsupported protocol');
+}
+
+// Function to generate xray config
+function generateXrayConfig(config, fragmentEnabled = false, proxyPort = 10801) {
+    let proxyOutbound;
+
+    if (config.protocol === 'vless') {
+        proxyOutbound = {
+            tag: 'proxy',
+            protocol: 'vless',
+            settings: {
+                vnext: [{
+                    address: config.address,
+                    port: config.port,
+                    users: [{
+                        id: config.uuid,
+                        email: 'ping@test.com',
+                        security: 'auto',
+                        encryption: config.encryption || 'none'
+                    }]
+                }]
+            },
+            streamSettings: buildCommonStreamSettings(config, fragmentEnabled),
+            mux: { enabled: false, concurrency: 8 }
+        };
+    } else if (config.protocol === 'vmess') {
+        proxyOutbound = {
+            tag: 'proxy',
+            protocol: 'vmess',
+            settings: {
+                vnext: [{
+                    address: config.address,
+                    port: config.port,
+                    users: [{
+                        id: config.uuid,
+                        alterId: config.aid || 0,
+                        security: config.scy || 'auto'
+                    }]
+                }]
+            },
+            streamSettings: buildCommonStreamSettings(config, fragmentEnabled),
+            mux: { enabled: false, concurrency: 8 }
+        };
+    } else if (config.protocol === 'shadowsocks') {
+        const outboundSettings = {
+            servers: [{
+                address: config.address,
+                port: config.port,
+                method: config.method,
+                password: config.password
+            }]
+        };
+
+        const pluginConfig = config.plugin ? parseMaybeJson(config.pluginOpts, null) : null;
+        if (config.plugin === 'v2ray-plugin' && pluginConfig) {
+            outboundSettings.plugin = 'v2ray-plugin';
+            outboundSettings.pluginOpts = pluginConfig;
+        }
+
+        proxyOutbound = {
+            tag: 'proxy',
+            protocol: 'shadowsocks',
+            settings: outboundSettings,
+            streamSettings: {
+                sockopt: fragmentEnabled ? { dialerProxy: 'fragment' } : undefined
+            },
+            mux: { enabled: false, concurrency: 8 }
+        };
+    } else if (config.protocol === 'trojan') {
+        proxyOutbound = {
+            tag: 'proxy',
+            protocol: 'trojan',
+            settings: {
+                servers: [{
+                    address: config.address,
+                    port: config.port,
+                    password: config.password
+                }]
+            },
+            streamSettings: buildCommonStreamSettings(config, fragmentEnabled),
+            mux: { enabled: false, concurrency: 8 }
+        };
+    } else {
+        throw new Error(`Unsupported protocol: ${config.protocol}`);
+    }
+
+    return {
+        log: { loglevel: 'error' },
+        dns: { servers: ['8.8.8.8', '1.1.1.1'] },
+        inbounds: [{
+            tag: 'http-proxy',
+            port: proxyPort,
+            listen: '127.0.0.1',
+            protocol: 'http',
+            settings: { auth: 'noauth', allowTransparent: false }
+        }],
+        outbounds: [
+            proxyOutbound,
             {
-                "tag": "proxy",
-                "protocol": "vless",
-                "settings": {
-                    "vnext": [
-                        {
-                            "address": vlessConfig.address,
-                            "port": vlessConfig.port,
-                            "users": [
-                                {
-                                    "id": vlessConfig.uuid,
-                                    "email": "ping@test.com",
-                                    "security": "auto",
-                                    "encryption": vlessConfig.encryption
-                                }
-                            ]
-                        }
-                    ]
-                },
-                "streamSettings": {
-                    "network": vlessConfig.type,
-                    "security": vlessConfig.security,
-                    "tlsSettings": vlessConfig.security === "tls" ? {
-                        "allowInsecure": false,
-                        "serverName": vlessConfig.sni,
-                        "fingerprint": vlessConfig.fp
-                    } : undefined,
-                    "wsSettings": vlessConfig.type === "ws" ? {
-                        "path": vlessConfig.path,
-                        "headers": {
-                            "Host": vlessConfig.host
-                        }
-                    } : undefined,
-                    "tcpSettings": (vlessConfig.type === "tcp" && vlessConfig.headerType === "http") ? {
-                        "header": {
-                            "type": "http",
-                            "request": {
-                                "version": "1.1",
-                                "method": "GET",
-                                "path": [vlessConfig.path || "/"],
-                                "headers": {
-                                    "Host": [vlessConfig.host],
-                                    "User-Agent": [
-                                        "Mozilla/5.0 (Windows NT 10.0; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/53.0.2785.143 Safari/537.36",
-                                        "Mozilla/5.0 (iPhone; CPU iPhone OS 10_0_2 like Mac OS X) AppleWebKit/601.1 (KHTML, like Gecko) CriOS/53.0.2785.109 Mobile/14A456 Safari/601.1.46"
-                                    ],
-                                    "Accept-Encoding": ["gzip, deflate"],
-                                    "Connection": ["keep-alive"],
-                                    "Pragma": "no-cache"
-                                }
-                            }
-                        }
-                    } : undefined,
-                    "sockopt": fragmentEnabled ? {
-                        "dialerProxy": "fragment"
-                    } : undefined
-                },
-                "mux": {
-                    "enabled": false,
-                    "concurrency": 8
-                }
+                tag: 'direct',
+                protocol: 'freedom',
+                settings: { domainStrategy: 'AsIs', userLevel: 0 }
             },
             {
-                "tag": "direct",
-                "protocol": "freedom",
-                "settings": {
-                    "domainStrategy": "AsIs",
-                    "userLevel": 0
-                }
-            },
-            {
-                "tag": "fragment",
-                "protocol": "freedom",
-                "settings": fragmentEnabled ? {
-                    "fragment": {
-                        "packets": FRAGMENT_PACKETS,
-                        "length": FRAGMENT_LENGTH,
-                        "interval": FRAGMENT_INTERVAL
+                tag: 'fragment',
+                protocol: 'freedom',
+                settings: fragmentEnabled ? {
+                    fragment: {
+                        packets: FRAGMENT_PACKETS,
+                        length: FRAGMENT_LENGTH,
+                        interval: FRAGMENT_INTERVAL
                     }
                 } : {}
             }
         ],
-        "routing": {
-            "domainStrategy": "AsIs",
-            "rules": [
-                {
-                    "type": "field",
-                    "outboundTag": "proxy",
-                    "domain": [""]
-                }
-            ]
+        routing: {
+            domainStrategy: 'AsIs',
+            rules: [{
+                type: 'field',
+                outboundTag: 'proxy',
+                domain: ['']
+            }]
         }
     };
-
-    return config;
 }
 
 // Function to get current time string
@@ -267,11 +493,12 @@ function testConnection(proxyPort, timeout = 10000) {
 
 // Function to detect input type and load config
 function detectInputTypeAndLoadConfig(input) {
-    // Check if input is a vless URL
-    if (input.startsWith('vless://')) {
+    // Check if input is a config URL (vless, vmess, ss, trojan)
+    if (input.startsWith('vless://') || input.startsWith('vmess://') || input.startsWith('ss://') || input.startsWith('trojan://')) {
+        const config = parseConfigUrl(input);
         return {
-            type: 'vless',
-            config: parseVlessUrl(input)
+            type: config.protocol,
+            config: config
         };
     }
 
@@ -283,7 +510,7 @@ function detectInputTypeAndLoadConfig(input) {
             const xrayConfig = JSON.parse(fileContent);
 
             // Extract connection info from xray config for display
-            const outbound = xrayConfig.outbounds?.find(o => o.protocol === 'vless' || o.protocol === 'vmess' || o.protocol === 'trojan');
+            const outbound = xrayConfig.outbounds?.find(o => o.protocol === 'vless' || o.protocol === 'vmess' || o.protocol === 'shadowsocks' || o.protocol === 'trojan');
             if (!outbound) {
                 throw new Error('No valid proxy outbound found in config file');
             }
@@ -299,20 +526,62 @@ function detectInputTypeAndLoadConfig(input) {
         }
     }
 
-    throw new Error('Input must be either a vless:// URL or a valid xray config file path');
+    throw new Error('Input must be either a protocol URL (vless://, vmess://, ss://, trojan://) or a valid xray config file path');
 }
 
 // Function to extract connection info from xray outbound for display
 function extractConnectionInfo(outbound) {
-    const vnext = outbound.settings?.vnext?.[0];
+    const protocol = outbound.protocol || 'unknown';
     const streamSettings = outbound.streamSettings || {};
-
+    
+    if (protocol === 'vless') {
+        const vnext = outbound.settings?.vnext?.[0];
+        return {
+            address: vnext?.address || 'unknown',
+            port: vnext?.port || 'unknown',
+            protocol: protocol,
+            security: streamSettings.security || 'none',
+            network: streamSettings.network || 'tcp',
+            remark: outbound.tag || 'config-file'
+        };
+    } else if (protocol === 'vmess') {
+        const vnext = outbound.settings?.vnext?.[0];
+        return {
+            address: vnext?.address || 'unknown',
+            port: vnext?.port || 'unknown',
+            protocol: protocol,
+            security: streamSettings.security || 'none',
+            network: streamSettings.network || 'tcp',
+            remark: outbound.tag || 'config-file'
+        };
+    } else if (protocol === 'shadowsocks') {
+        const server = outbound.settings?.servers?.[0];
+        return {
+            address: server?.address || 'unknown',
+            port: server?.port || 'unknown',
+            protocol: protocol,
+            security: 'none',
+            network: 'tcp',
+            remark: outbound.tag || 'config-file'
+        };
+    } else if (protocol === 'trojan') {
+        const server = outbound.settings?.servers?.[0];
+        return {
+            address: server?.address || 'unknown',
+            port: server?.port || 'unknown',
+            protocol: protocol,
+            security: streamSettings.security || 'tls',
+            network: streamSettings.network || 'tcp',
+            remark: outbound.tag || 'config-file'
+        };
+    }
+    
     return {
-        address: vnext?.address || 'unknown',
-        port: vnext?.port || 'unknown',
-        protocol: outbound.protocol || 'unknown',
-        security: streamSettings.security || 'none',
-        network: streamSettings.network || 'tcp',
+        address: 'unknown',
+        port: 'unknown',
+        protocol: protocol,
+        security: 'unknown',
+        network: 'unknown',
         remark: outbound.tag || 'config-file'
     };
 }
@@ -361,7 +630,9 @@ function detectFragmentInConfig(xrayConfig) {
 // Function to validate xray config
 async function validateXrayConfig(xrayPath, configData) {
     try {
-        const cmd = xrayPath === 'xray' ? 'xray' : `"${xrayPath}"`;
+        // Remove quotes if present in the path
+        const cleanPath = xrayPath.replace(/^["']|["']$/g, '');
+        const cmd = cleanPath === 'xray' ? 'xray' : `"${cleanPath}"`;
 
         // If configData is a file path (string without JSON structure)
         if (typeof configData === 'string' && !configData.trim().startsWith('{')) {
@@ -371,7 +642,7 @@ async function validateXrayConfig(xrayPath, configData) {
         }
 
         // Use stdin for config validation
-        const xrayProcess = spawn(cmd === 'xray' ? 'xray' : xrayPath, ['-test', '-config', 'stdin:'], {
+        const xrayProcess = spawn(cleanPath === 'xray' ? 'xray' : cleanPath, ['-test', '-config', 'stdin:'], {
             stdio: ['pipe', 'pipe', 'pipe']
         });
 
@@ -417,7 +688,7 @@ async function validateXrayConfig(xrayPath, configData) {
 async function main() {
     const argv = yargs(hideBin(process.argv))
         .scriptName('xping')
-        .usage('\nVLESS connection ping tool using Xray with fragment support\nProject: https://github.com/NabiKAZ/xping\n\nUsage: $0 <input> [options]')
+        .usage('\nMulti-protocol connection ping tool using Xray with fragment support\nSupports VLESS, VMESS, Shadowsocks (SS), and Trojan protocols\nProject: https://github.com/NabiKAZ/xping\n\nUsage: $0 <input> [options]')
         .updateStrings({
             'Positionals:': 'Arguments:'
         })
@@ -431,9 +702,9 @@ async function main() {
             }
             process.exit(1);
         })
-        .command('$0 <input>', 'VLESS URL or xray config file path to test', (yargs) => {
+        .command('$0 <input>', 'Protocol URL (vless://, vmess://, ss://, trojan://) or xray config file path to test', (yargs) => {
             yargs.positional('input', {
-                describe: 'VLESS URL or xray config file path to test',
+                describe: 'Protocol URL or xray config file path to test',
                 type: 'string'
             });
         })
@@ -466,6 +737,9 @@ async function main() {
         .alias('h', 'help')
         .epilogue(`Examples:
   $ xping "vless://uuid@server:port?security=tls&type=ws&path=/..."
+  $ xping "vmess://config-base64"
+  $ xping "ss://method:password@server:port"
+  $ xping "trojan://password@server:port?security=tls"
   $ xping config.json --fragment --count 10
   $ xping "vless://..." --delay 500 --timeout 10000 --count 5
   $ xping config.json -c 3 -d 2000 -t 5000
@@ -477,9 +751,15 @@ Environment Variables:
   XPING_FRAGMENT_LENGTH    Fragment length range (default: 5-9)
   XPING_FRAGMENT_INTERVAL  Fragment interval range (default: 1-2)
 
+Supported Protocols:
+  - VLESS: vless://uuid@server:port?...
+  - VMESS: vmess://config-base64
+  - Shadowsocks: ss://method:password@server:port
+  - Trojan: trojan://password@server:port?...
+
 Note: 
   - When using a config file, it will be processed in memory with a free port (original file unchanged)
-  - Fragment mode is only applied to vless URLs, not config files`)
+  - Fragment mode is only applied to protocol URLs, not config files`)
         .wrap(null)
         .parseSync();
 
@@ -512,7 +792,7 @@ Note:
         let configFilePath = null;
         let configFragmentInfo = null;
 
-        if (inputData.type === 'vless') {
+        if (inputData.type !== 'config') {
             xrayConfig = generateXrayConfig(connectionInfo, fragmentEnabled, proxyPort);
 
             // Validate generated config via stdin
@@ -558,12 +838,17 @@ Note:
         }
 
         // Show config information
-        console.log(chalk.cyanBright(`📍 ${connectionInfo.address}:${connectionInfo.port}`) + chalk.gray(' | ') + chalk.white(connectionInfo.remark));
+        console.log(chalk.cyanBright(`📍 ${connectionInfo.address}:${connectionInfo.port}`) + chalk.gray(' | ') + chalk.white(connectionInfo.remark) + chalk.gray(' | Protocol: ') + chalk.yellow(connectionInfo.protocol.toUpperCase()));
 
-        if (inputData.type === 'vless') {
-            console.log(chalk.cyanBright(`🔒 ${connectionInfo.security}`) + chalk.gray(' | Type: ') + chalk.yellow(connectionInfo.type) + chalk.gray(' | Host: ') + chalk.yellow(connectionInfo.host) + chalk.gray(' | SNI: ') + chalk.yellow(connectionInfo.sni) + chalk.gray(' | Path: ') + chalk.yellow(connectionInfo.path));
+        if (inputData.type !== 'config') {
+            const protocolConfig = inputData.config;
+            if (connectionInfo.protocol === 'vless' || connectionInfo.protocol === 'vmess' || connectionInfo.protocol === 'trojan') {
+                console.log(chalk.cyanBright(`🔒 ${connectionInfo.security}`) + chalk.gray(' | Type: ') + chalk.yellow(connectionInfo.network) + chalk.gray(' | Host: ') + chalk.yellow(protocolConfig.host || '-') + chalk.gray(' | SNI: ') + chalk.yellow(protocolConfig.sni || '-') + chalk.gray(' | Path: ') + chalk.yellow(protocolConfig.path || '-'));
+            } else if (connectionInfo.protocol === 'shadowsocks') {
+                console.log(chalk.cyanBright(`🔒 ${protocolConfig.method}`) + chalk.gray(' | Type: ') + chalk.yellow(connectionInfo.network));
+            }
         } else {
-            console.log(chalk.cyanBright(`🔒 ${connectionInfo.security}`) + chalk.gray(' | Type: ') + chalk.yellow(connectionInfo.network) + chalk.gray(' | Protocol: ') + chalk.yellow(connectionInfo.protocol));
+            console.log(chalk.cyanBright(`🔒 ${connectionInfo.security}`) + chalk.gray(' | Type: ') + chalk.yellow(connectionInfo.network));
         }
 
         // Show fragment info
@@ -586,9 +871,12 @@ Note:
         }
         console.log('');
 
+        // Clean xray path (remove quotes if present)
+        const cleanXrayPath = xrayPath.replace(/^["']|["']$/g, '');
+
         // Start xray process with config via stdin
         const xrayArgs = ['-config', 'stdin:'];
-        xrayProcess = spawn(xrayPath === true ? 'xray' : xrayPath, xrayArgs, {
+        xrayProcess = spawn(cleanXrayPath === true ? 'xray' : cleanXrayPath, xrayArgs, {
             stdio: 'pipe'
         });
 
