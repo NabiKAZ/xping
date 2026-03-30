@@ -688,7 +688,16 @@ async function validateXrayConfig(xrayPath, configData) {
 async function main() {
     const argv = yargs(hideBin(process.argv))
         .scriptName('xping')
-        .usage('\nMulti-protocol connection ping tool using Xray with fragment support\nSupports VLESS, VMESS, Shadowsocks (SS), and Trojan protocols\nProject: https://github.com/NabiKAZ/xping\n\nUsage: $0 <input> [options]')
+        .usage('\n'+
+            '╔════════════════════════════════════════════════════════╗\n'+
+            '║  XPING - Multi-Protocol Connection Ping Tool v2.0.0    ║\n'+
+            '║  Built with Xray Core | Supports VLESS/VMESS/SS/Trojan ║\n'+
+            '╠════════════════════════════════════════════════════════╣\n'+
+            '║  Project: https://github.com/NabiKAZ/xping             ║\n'+
+            '║  Author: NabiKAZ | License: GPL-3.0                    ║\n'+
+            '╚════════════════════════════════════════════════════════╝\n'+
+            '\nUsage: $0 <input> [options]\n'+
+            'Input: Protocol URL or Xray config JSON file')
         .updateStrings({
             'Positionals:': 'Arguments:'
         })
@@ -731,7 +740,7 @@ async function main() {
             describe: 'Number of pings to send (default: infinite)',
             type: 'number'
         })
-        .version('1.0.0')
+        .version('2.0.0')
         .alias('v', 'version')
         .help('h')
         .alias('h', 'help')
