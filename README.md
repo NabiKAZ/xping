@@ -35,9 +35,8 @@ https://github.com/user-attachments/assets/6dd3f671-5469-441a-91c0-00b1028e2708
 
 ### Install via npm (Global)
 
-```bash
-npm install -g @nabikaz/xping
-```
+~~npm install -g @nabikaz/xping~~ \
+Install manually for now.
 
 ### Manual Installation
 
