@@ -119,8 +119,10 @@ function parseMaybeJson(value, fallback = {}) {
 
 // Helper function to build common stream settings
 function buildCommonStreamSettings(config, fragmentEnabled) {
+    // XHTTP support: if type is xhttp, set network to xhttp and add xhttpSettings
+    let network = config.type === 'xhttp' ? 'xhttp' : (config.type || 'tcp');
     const streamSettings = {
-        network: config.type || 'tcp',
+        network,
         security: config.security || 'none',
         sockopt: fragmentEnabled ? { dialerProxy: 'fragment' } : undefined
     };
@@ -156,6 +158,16 @@ function buildCommonStreamSettings(config, fragmentEnabled) {
         };
     }
 
+    if (streamSettings.network === 'xhttp') {
+        // XHTTP (stream-one) transport for newer Xray
+        const xhttpSettings = {
+            path: config.path || '/',
+            host: config.host || undefined
+        };
+        if (config.mode) xhttpSettings.mode = config.mode;
+        streamSettings.xhttpSettings = xhttpSettings;
+    }
+
     if (streamSettings.network === 'tcp' && config.headerType === 'http') {
         streamSettings.tcpSettings = {
             header: {
@@ -187,6 +199,7 @@ function parseVlessUrl(vlessUrl) {
         const { base, remark } = splitUrlAndRemark(vlessUrl, 'vless');
         const url = new URL(base);
 
+        const type = url.searchParams.get('type') || 'ws';
         return {
             protocol: 'vless',
             uuid: decodeURIComponent(url.username),
@@ -196,7 +209,7 @@ function parseVlessUrl(vlessUrl) {
             security: url.searchParams.get('security') || 'tls',
             sni: url.searchParams.get('sni') || '',
             fp: url.searchParams.get('fp') || '',
-            type: url.searchParams.get('type') || 'ws',
+            type,
             headerType: url.searchParams.get('headerType') || '',
             host: url.searchParams.get('host') || '',
             path: url.searchParams.get('path') || '/',
@@ -851,10 +864,12 @@ Note:
 
         if (inputData.type !== 'config') {
             const protocolConfig = inputData.config;
+            // Use the protocol's transport type for display (fallback to network)
+            const typeStr = protocolConfig.type || connectionInfo.network;
             if (connectionInfo.protocol === 'vless' || connectionInfo.protocol === 'vmess' || connectionInfo.protocol === 'trojan') {
-                console.log(chalk.cyanBright(`🔒 ${connectionInfo.security}`) + chalk.gray(' | Type: ') + chalk.yellow(connectionInfo.network) + chalk.gray(' | Host: ') + chalk.yellow(protocolConfig.host || '-') + chalk.gray(' | SNI: ') + chalk.yellow(protocolConfig.sni || '-') + chalk.gray(' | Path: ') + chalk.yellow(protocolConfig.path || '-'));
+                console.log(chalk.cyanBright(`🔒 ${connectionInfo.security}`) + chalk.gray(' | Type: ') + chalk.yellow(typeStr) + chalk.gray(' | Host: ') + chalk.yellow(protocolConfig.host || '-') + chalk.gray(' | SNI: ') + chalk.yellow(protocolConfig.sni || '-') + chalk.gray(' | Path: ') + chalk.yellow(protocolConfig.path || '-'));
             } else if (connectionInfo.protocol === 'shadowsocks') {
-                console.log(chalk.cyanBright(`🔒 ${protocolConfig.method}`) + chalk.gray(' | Type: ') + chalk.yellow(connectionInfo.network));
+                console.log(chalk.cyanBright(`🔒 ${protocolConfig.method}`) + chalk.gray(' | Type: ') + chalk.yellow(typeStr));
             }
         } else {
             console.log(chalk.cyanBright(`🔒 ${connectionInfo.security}`) + chalk.gray(' | Type: ') + chalk.yellow(connectionInfo.network));
