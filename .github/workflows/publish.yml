@@ -24,5 +24,3 @@ jobs:
         echo "Setting version to: $NEW_VERSION"
         npm version "$NEW_VERSION" --no-git-tag-version
     - run: npm publish --access public
-      env:
-        NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
